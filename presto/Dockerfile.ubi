@@ -1,8 +1,10 @@
 FROM registry.redhat.io/ubi8/ubi
 LABEL maintainer="https://www.starburstdata.com/"
 
-ARG presto_version=323-e.4
-ARG dist_location=""
+ARG presto_version=""
+ARG maven_creds=""
+
+RUN yum -y update-minimal --security --setopt=tsflags=nodocs && echo OK
 
 RUN set -eux && \
     # explicitly installing python3 prior to python2 so that the a later python3 install would not delete the python symlink created below
@@ -27,17 +29,17 @@ RUN set -eux && \
 COPY ./installdir /installdir
 
 RUN set -xeu && \
-    dist="$(/installdir/find-dist-location.sh "${dist_location}" "${presto_version}")" && \
-    yum -y localinstall "${dist}/presto-server-rpm-${presto_version}.x86_64.rpm" && \
+    /installdir/maven-setup.sh "${maven_creds}" && \
+    mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -q -Dartifact="com.starburstdata.presto:presto-server-rpm:${presto_version}:rpm" -Dtransitive=false && \
+    rpm_filename="$HOME/.m2/repository/com/starburstdata/presto/presto-server-rpm/${presto_version}/presto-server-rpm-${presto_version}.rpm" && \
+    echo "${rpm_filename}" && \
+    yum -y localinstall "${rpm_filename}" && \
     rpm -qa | grep -q presto-server && \
-    cli_location="${dist}/presto-cli-${presto_version}-executable.jar" && \
-    if test -f "${cli_location}"; then \
-        cp -a "${cli_location}" /usr/local/bin/presto-cli; \
-    else \
-        curl -fsSL "${cli_location}" -o /usr/local/bin/presto-cli; \
-    fi && \
-    chmod -v +x /usr/local/bin/presto-cli && \
-    ln -vs /usr/local/bin/presto-cli / `# backwards compatibility ` && \
+    echo OK
+
+RUN set -xeu && \
+    yum remove -y maven && \
+    rm -rf "$HOME/.m2" pom.xml && \
     yum clean all && \
     rm -rf /var/tmp && \
     rm -rf /installdir && \
